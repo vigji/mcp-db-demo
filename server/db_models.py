@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 from sqlalchemy import Date, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -14,10 +17,10 @@ class Project(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    start_date: Mapped[Date]
-    end_date: Mapped[Date | None]
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    budget_eur: Mapped[Numeric] = mapped_column(Numeric(12, 2), nullable=False)
+    budget_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
     cost_items: Mapped[list["CostItem"]] = relationship(back_populates="project")
     deliveries: Mapped[list["Delivery"]] = relationship(back_populates="project")
@@ -29,8 +32,8 @@ class CostItem(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
     category: Mapped[str] = mapped_column(String(64), nullable=False)
-    amount_eur: Mapped[Numeric] = mapped_column(Numeric(12, 2), nullable=False)
-    cost_date: Mapped[Date]
+    amount_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    cost_date: Mapped[date] = mapped_column(Date, nullable=False)
     supplier_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="cost_items")
@@ -42,10 +45,10 @@ class Delivery(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
     material_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    quantity: Mapped[int]
-    unit: Mapped[str] = mapped_column(String(32))
-    unit_cost_eur: Mapped[Numeric] = mapped_column(Numeric(12, 2), nullable=False)
-    delivery_date: Mapped[Date]
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    unit_cost_eur: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     supplier_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="deliveries")
