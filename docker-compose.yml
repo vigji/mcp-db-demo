@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  mcp_server:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      DB_URL_ADMIN: ${DB_URL_ADMIN}
+      DB_URL_RO: ${DB_URL_RO}
+    depends_on:
+      - db
+    tty: true
+
+volumes:
+  db_data:

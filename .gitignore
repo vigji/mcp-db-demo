@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.python-version
+.venv/
+.env.local
+.env.development
+.env.production
+.env.test
+.idea/
+.vscode/
+*.egg-info/
+.DS_Store
