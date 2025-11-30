@@ -9,10 +9,31 @@ docker-compose.yml        # Postgres + MCP server services
 .env.example              # sample environment (copy to .env)
 server/
   Dockerfile              # Python MCP server container
-  requirements.txt        # MCP + SQLAlchemy dependencies
   db_models.py            # SQLAlchemy models
   db_utils.py             # schema/seed helpers and readonly role
   mcp_db_server.py        # FastMCP server exposing DB tools
+app/
+  Dockerfile              # Lightweight chat gateway container
+  main.py                 # Minimal FastAPI app that calls OpenAI + MCP
+  pyproject.toml          # Gateway dependencies (FastAPI/OpenAI/Ollama)
+```
+
+## Architecture
+
+```
+client (curl, app, agent)
+    |
+    v
+[Chat Gateway  : FastAPI + OpenAI SDK]
+    |  (tool calls)
+    v
+OpenAI model (e.g., gpt-4.1-mini)
+    |  (MCP stdio)
+    v
+[MCP DB Server : FastMCP + SQLAlchemy]
+    |
+    v
+Postgres
 ```
 
 ## Prerequisites
@@ -20,44 +41,49 @@ server/
 - Docker and Docker Compose
 - Python 3.11+ (only needed if you want to run the server locally without Docker)
 
-## Setup
+## Quickstart (Docker Compose)
 
-1. Copy the environment template and fill in secrets:
+1) Copy the environment template and fill in secrets:
+```bash
+cp .env.example .env
+# edit .env to set POSTGRES_* credentials and your OpenAI API key
+```
+The `DB_URL_*` values in `.env.example` point to `db`, which is the hostname inside the Compose network. No changes needed if you run both services via `docker compose`.
 
-   ```bash
-   cp .env.example .env
-   # edit .env to set POSTGRES_* credentials and your OpenAI API key
-   ```
+2) Build and start everything:
+```bash
+docker compose up --build
+```
+The `mcp_server` container will connect to `db`, create/seed tables, ensure the `readonly` role, and expose MCP tools on stdio (as the container entrypoint).
 
-2. Build and start the stack:
+3) Check logs / quick sanity checks:
+```bash
+docker compose logs -f mcp_server
+docker compose exec db psql -U admin -d construction -c "SELECT COUNT(*) FROM projects;"
+docker compose exec db psql -U admin -d construction -c "SELECT COUNT(*) FROM cost_items;"
+```
 
-   ```bash
-   docker compose up --build
-   ```
+4) Wire your MCP client/agent to the running container:
+- Use the MCP SDK’s stdio client and start the process with `docker compose exec mcp_server python mcp_db_server.py` **only** if you want an interactive foreground run. Otherwise the container’s default command is already running the server.
+- Configure your agent to call the MCP server (stdio) and set the model to `gpt-4.1-mini` (or similar).
 
-   On first start the MCP server will:
-   - create tables and seed ~5 projects with costs and deliveries,
-   - create a `readonly` Postgres role with SELECT-only privileges,
-   - expose MCP tools over stdio for clients.
+5) Stop when done:
+```bash
+docker compose down
+```
 
-3. Inspect the startup logs:
+## Using the chat gateway (LLM + MCP)
 
-   ```bash
-   docker compose logs -f mcp_server
-   ```
-
-4. (Optional) Verify the seeded data quickly:
-
-   ```bash
-   docker compose exec db psql -U admin -d construction -c "SELECT COUNT(*) FROM projects;"
-   docker compose exec db psql -U admin -d construction -c "SELECT COUNT(*) FROM cost_items;"
-   ```
-
-5. Stop the stack when you are done:
-
-   ```bash
-   docker compose down
-   ```
+- Runs as `chat_gateway` alongside `db` and `mcp_server` when you `docker compose up --build`.
+- Choose provider via `.env`:
+  - `LLM_PROVIDER=openai` (default): set `OPENAI_API_KEY`; `OPENAI_MODEL` defaults to `gpt-4.1-mini`.
+  - `LLM_PROVIDER=ollama`: set `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434/v1`, adjust if different) and `OLLAMA_MODEL` (default `qwen3-coder:30b`). `OLLAMA_API_KEY` is optional if your endpoint enforces auth.
+- Endpoint: `POST http://localhost:8000/chat` with body:
+  ```json
+  { "question": "Which projects are over budget?" }
+  ```
+  Optional: `"model": "<model-name>"` to override the default for the chosen provider.
+- The gateway spawns `python -m server.mcp_db_server` via stdio for each request so the latest MCP code is used. It converts OpenAI tool calls into MCP tool calls and returns the final answer text.
 
 ## Available MCP tools
 
@@ -75,26 +101,27 @@ Suggested system prompt snippet for your agent:
 
 > You are a BI analyst for a construction company. Use the MCP DB tools to answer numeric questions. Never attempt to modify the database.
 
-### Local MCP server usage without Docker
+### Running the MCP server directly on your host (without the container)
 
-If you want to run the MCP server directly on your machine (for development):
+Only do this if you want to debug the Python code locally. Two things to watch:
+- Use `localhost` in your DB URLs (the `db` hostname only works from inside the Compose network).
+- Make sure Postgres is already running (e.g., `docker compose up db`).
 
-1. Create and activate a Python 3.11+ virtual environment.
-2. Install dependencies:
-
+Steps:
+1. Create/activate a Python 3.11+ venv.
+2. Install deps: `pip install -e server`
+3. Export DB URLs that point to your reachable Postgres (if you’re using the compose `db` service from the host, use `localhost`):
    ```bash
-   pip install -r server/requirements.txt
+   export DB_URL_ADMIN=postgresql+psycopg2://admin:adminpass@localhost:5432/construction
+   export DB_URL_RO=postgresql+psycopg2://readonly:readonlypass@localhost:5432/construction
    ```
-
-3. Ensure Postgres is running and `DB_URL_ADMIN` / `DB_URL_RO` are set in your shell (use the same values as `.env`).
-4. Start the server from the `server/` directory:
-
+4. Start the server from `server/`:
    ```bash
    cd server
    python -m mcp_db_server
    ```
 
-The server runs over stdio, so you can attach any MCP-compatible client. The `init_schema_and_seed()` call will create tables, seed data, and ensure the readonly role on first run.
+On first run it will create/seed tables and ensure the readonly role.
 
 ### Example tool calls (handy for manual testing)
 

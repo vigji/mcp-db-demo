@@ -1,0 +1,17 @@
+[project]
+name = "chat-gateway"
+version = "0.1.0"
+description = "Minimal FastAPI gateway that routes OpenAI tool calls to the MCP DB server"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "openai>=1.40.0",
+]
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main"]
