@@ -141,34 +141,12 @@ docker compose down
 
 ## Wiring an OpenAI agent (high level)
 
-- **OpenAI Apps / Agents SDK (recommended):** Declare your MCP server as a tool, set the model to `gpt-4.1-mini`, and run the MCP server as a child process (stdio) or HTTP bridge per the MCP SDK docs.
+- **OpenAI Apps / Agents SDK (recommended):** Declare your MCP server as a tool endpoint (SSE URL), set the model to `gpt-4.1-mini` (or your choice), and enable tool calling.
 - **Custom script with Responses API:** Use the MCP Python SDK client to invoke server tools when the model issues tool calls.
 
 Suggested system prompt snippet for your agent:
 
 > You are a BI analyst for a construction company. Use the MCP DB tools to answer numeric questions. Never attempt to modify the database.
-
-### Running the MCP server directly on your host (without the container)
-
-Only do this if you want to debug the Python code locally. Two things to watch:
-- Use `localhost` in your DB URLs (the `db` hostname only works from inside the Compose network).
-- Make sure Postgres is already running (e.g., `docker compose up db`).
-
-Steps:
-1. Create/activate a Python 3.11+ venv.
-2. Install deps: `pip install -e server`
-3. Export DB URLs that point to your reachable Postgres (if you’re using the compose `db` service from the host, use `localhost`):
-   ```bash
-   export DB_URL_ADMIN=postgresql+psycopg2://admin:adminpass@localhost:5432/construction
-   export DB_URL_RO=postgresql+psycopg2://readonly:readonlypass@localhost:5432/construction
-   ```
-4. Start the server from `server/`:
-   ```bash
-   cd server
-   python -m mcp_db_server  # defaults to stdio; set MCP_TRANSPORT=sse to serve on http://localhost:8765/sse
-   ```
-
-On first run it will create/seed tables and ensure the readonly role.
 
 ### Example tool calls (handy for manual testing)
 
