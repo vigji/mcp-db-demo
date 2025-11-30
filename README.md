@@ -2,6 +2,8 @@
 
 A minimal demo showing how to expose a Postgres-backed construction BI dataset through an MCP server built with the official Python SDK and SQLAlchemy. The stack runs via Docker Compose and is ready to plug into OpenAI's Responses API or Apps/Agents SDK with the `gpt-4.1-mini` (or `gpt-4o-mini`) model.
 
+This simple dataset can be queried reasonabily well using Qwen3-coder:30b (running locally with Ollama). Tested also with  GPT-4 variants.
+
 ## Project layout
 
 ```
@@ -20,7 +22,7 @@ app/
 
 ## Architecture
 
-### Detailed service map (Mermaid)
+### Detailed service map
 
 ```mermaid
 flowchart TD
@@ -54,7 +56,7 @@ flowchart TD
     api -->|"HTTP response"| user
 ```
 
-### Request/response sequence (Mermaid)
+### Request/response sequence
 
 ```mermaid
 sequenceDiagram
