@@ -11,4 +11,4 @@ RUN apt-get update && apt-get install -y \
 COPY . .
 RUN uv pip install --system .
 
-CMD ["python", "mcp_db_server.py"]
+CMD ["python", "main.py"]

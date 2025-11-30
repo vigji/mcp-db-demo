@@ -20,26 +20,71 @@ app/
 
 ## Architecture
 
+### Detailed service map (Mermaid)
+
+```mermaid
+flowchart TD
+    subgraph client[Client / Caller]
+        user[User / UI]
+    end
+
+    subgraph chat[chat_gateway]
+        api[FastAPI /app/main.py]
+        llm["OpenAI SDK"]
+    end
+
+    subgraph mcp[mcp_server]
+        fastmcp["FastMCP (server/main.py -> mcp_db_server.run_server)"]
+        tools[get_schema\nrun_sql\nproject_cost_overview\ntop_overruns]
+    end
+
+    pg[(Postgres DB)]
+
+    user -->|"HTTP POST /chat"| api
+    api -->|"LLM call + tool schema"| llm
+    llm -->|"tool_calls"| api
+    api -->|"SSE MCP transport"| fastmcp
+    fastmcp --> tools
+    tools -->|"SELECT (readonly)"| pg
+    pg --> tools
+    tools --> fastmcp
+    fastmcp --> api
+    api -->|"LLM finalization"| llm
+    llm -->|"answer text"| api
+    api -->|"HTTP response"| user
 ```
-client (curl, app, agent)
-    |
-    v
-[Chat Gateway  : FastAPI + OpenAI SDK]
-    |  (tool calls)
-    v
-OpenAI model (e.g., gpt-4.1-mini)
-    |  (MCP over SSE @ http://mcp_server:8765/sse)
-    v
-[MCP DB Server : FastMCP + SQLAlchemy]  <-- long-lived container
-    |
-    v
-Postgres
+
+### Request/response sequence (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant G as chat_gateway (FastAPI)
+    participant L as LLM (OpenAI/Ollama)
+    participant S as MCP server (FastMCP)
+    participant D as Postgres
+
+    U->>G: POST /chat {question}
+    G->>S: SSE connect (MCP)
+    G->>S: initialize + list_tools
+    G->>S: get_schema (once per request)
+    G->>L: chat.completions.create(messages+tools)
+    L-->>G: assistant msg + tool_calls?
+    alt tool_calls present
+        G->>S: call_tool (e.g., run_sql)
+        S->>D: SELECT ...
+        D-->>S: rows
+        S-->>G: tool result
+        G->>L: updated messages + tool outputs
+        L-->>G: final or more tool calls
+    end
+    L-->>G: final answer text
+    G-->>U: HTTP 200 {answer}
 ```
 
 ## Prerequisites
 
 - Docker and Docker Compose
-- Python 3.11+ (only needed if you want to run the server locally without Docker)
 
 ## Quickstart (Docker Compose)
 
@@ -64,8 +109,7 @@ docker compose exec db psql -U admin -d construction -c "SELECT COUNT(*) FROM co
 ```
 
 4) Wire your MCP client/agent to the running container:
-- Preferred: use the SSE endpoint `http://localhost:8765/sse` (or `http://mcp_server:8765/sse` inside the Compose network). The server tells the client where to POST messages.
-- If you need stdio instead, set `MCP_TRANSPORT=stdio` and point your client to a process (e.g., `docker compose exec mcp_server python mcp_db_server.py`).
+- Use the SSE endpoint `http://mcp_server:8765/sse` inside the Compose network (or `http://localhost:8765/sse` if you expose the port locally). The server tells the client where to POST messages.
 
 5) Stop when done:
 ```bash
@@ -75,15 +119,18 @@ docker compose down
 ## Using the chat gateway (LLM + MCP)
 
 - Runs as `chat_gateway` alongside `db` and `mcp_server` when you `docker compose up --build`.
-- Choose provider via `.env`:
-  - `LLM_PROVIDER=openai` (default): set `OPENAI_API_KEY`; `OPENAI_MODEL` defaults to `gpt-4.1-mini`.
-  - `LLM_PROVIDER=ollama`: set `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434/v1`, adjust if different) and `OLLAMA_MODEL` (default `qwen3-coder:30b`). `OLLAMA_API_KEY` is optional if your endpoint enforces auth.
-- Endpoint: `POST http://localhost:8000/chat` with body:
+- Model provider (set in `.env`):
+  - `LLM_PROVIDER=openai` (default): set `OPENAI_API_KEY`; `OPENAI_MODEL` defaults to `gpt-4.1-mini` (tuned for tool use and cost-effective). Override per-request via `model`.
+  - `LLM_PROVIDER=ollama`: set `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434/v1`) and `OLLAMA_MODEL` (default `qwen3-coder:30b`). `OLLAMA_API_KEY` is optional if your Ollama endpoint enforces auth. Per-request `model` overrides the default.
+- Endpoint: `POST http://localhost:8000/chat` with JSON body:
   ```json
-  { "question": "Which projects are over budget?" }
+  {
+    "question": "Which projects are over budget?",
+    "model": "gpt-4.1-mini",   // optional override
+    "temperature": 0.2           // optional, passed to provider
+  }
   ```
-  Optional: `"model": "<model-name>"` to override the default for the chosen provider.
-- MCP transport: the gateway requires `MCP_SSE_URL` (e.g., `http://mcp_server:8765/sse`) and only uses the long-lived MCP container; there is no local stdio fallback.
+- MCP transport: requires `MCP_SSE_URL` (e.g., `http://mcp_server:8765/sse`) and uses the long-lived MCP container; there is no local stdio fallback.
 
 ## Available MCP tools
 

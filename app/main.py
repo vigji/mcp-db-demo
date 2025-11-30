@@ -47,6 +47,7 @@ app = FastAPI(title="MCP BI Chat Gateway", version="0.1.0")
 class ChatRequest(BaseModel):
     question: str
     model: str | None = None
+    temperature: float | None = None
 
 
 def _get_llm_client_and_model(model_override: str | None) -> tuple[AsyncOpenAI, str]:
@@ -90,7 +91,7 @@ def _tool_result_to_text(result: Any) -> str:
     return "\n".join(chunks) if chunks else "{}"
 
 
-async def _chat_with_tools(question: str, model: str) -> str:
+async def _chat_with_tools(question: str, model: str, temperature: float | None) -> str:
     if not MCP_SSE_URL:
         raise RuntimeError("MCP_SSE_URL is required; SSE transport is mandatory for the chat gateway.")
 
@@ -126,6 +127,7 @@ async def _chat_with_tools(question: str, model: str) -> str:
                     model=resolved_model,
                     messages=messages,
                     tools=tool_defs,
+                    temperature=temperature,
                 )
                 message = completion.choices[0].message
                 preview = (message.content or "").strip()
@@ -195,7 +197,7 @@ async def _chat_with_tools(question: str, model: str) -> str:
 @app.post("/chat")
 async def chat(req: ChatRequest) -> dict[str, str]:
     try:
-        answer = await _chat_with_tools(req.question, req.model or "")
+        answer = await _chat_with_tools(req.question, req.model or "", req.temperature)
         return {"model": req.model or (OLLAMA_MODEL if LLM_PROVIDER == "ollama" else OPENAI_MODEL), "answer": answer}
     except Exception as exc:  # pragma: no cover - bubbled to API
         raise HTTPException(status_code=500, detail=str(exc)) from exc

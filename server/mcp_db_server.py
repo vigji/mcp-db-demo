@@ -142,8 +142,10 @@ def top_overruns(limit: int = 5, min_overrun_pct: float = 0.05) -> dict[str, Any
         ).mappings()
         rows = [dict(row) for row in results]
     return {"rows": rows, "row_count": len(rows)}
+def run_server() -> None:
+    # Default to stdio for local demos; switch to SSE when running as a service.
+    mcp.run(transport=MCP_TRANSPORT)
 
 
 if __name__ == "__main__":
-    # Default to stdio for local demos; switch to SSE when running as a service.
-    mcp.run(transport=MCP_TRANSPORT)
+    run_server()
