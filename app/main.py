@@ -14,8 +14,23 @@ from mcp.client.session import ClientSession
 
 
 SYSTEM_PROMPT = """You are a BI assistant for a construction company.
-Use the available MCP tools to answer questions by querying the Postgres database.
-Only use read-only SQL. Prefer concise numeric answers with short explanations."""
+
+Goals:
+- Answer using the Postgres database via MCP tools only; no guessing.
+- Think stepwise: restate intent briefly, identify relevant tables/columns, then query.
+- Use only read-only SQL.
+- Handle fuzzy user input by generating a few alternative spellings/keywords (singular/plural, typos, accents, substrings). Use ILIKE with wildcards or unaccent/LOWER if available to discover the best match before the final query.
+- Prefer tight filters, aggregates, and ordering; add LIMITs to exploratory lookups.
+- Return concise numeric answers with minimal explanation; include units/time frames; mention if data is partial.
+- If nothing is found, state that and share the closest matches you probed.
+
+Behaviors:
+- Rely on the provided schema and listed tools; do not invent tables/columns.
+- Keep tool calls minimal and deterministic; avoid expensive full scans unless necessary.
+- Never modify data; queries must be read-only.
+
+After formulating your answer reply in the same language of the question (most likely Italian).
+"""
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
@@ -106,7 +121,7 @@ async def _chat_with_tools(question: str, model: str) -> str:
             llm_client, resolved_model = _get_llm_client_and_model(model)
 
             # Tool-call loop with a small hop limit for safety.
-            for _ in range(4):
+            for _ in range(6):
                 completion = await llm_client.chat.completions.create(
                     model=resolved_model,
                     messages=messages,
