@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from typing import Any
@@ -9,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-from mcp import StdioServerParameters, stdio_client
+from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
 
 
@@ -39,6 +38,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-coder:30b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434/v1")
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # ollama ignores key by default
+
+MCP_SSE_URL = os.getenv("MCP_SSE_URL")
 
 app = FastAPI(title="MCP BI Chat Gateway", version="0.1.0")
 
@@ -90,17 +91,14 @@ def _tool_result_to_text(result: Any) -> str:
 
 
 async def _chat_with_tools(question: str, model: str) -> str:
-    server_params = StdioServerParameters(
-        command="python",
-        args=["-m", "mcp_db_server"],
-        # Pass through DB env so the child MCP server can connect.
-        env={k: v for k, v in os.environ.items() if k.startswith("DB_") or k.startswith("POSTGRES_")},
-        cwd="/app",
-    )
+    if not MCP_SSE_URL:
+        raise RuntimeError("MCP_SSE_URL is required; SSE transport is mandatory for the chat gateway.")
 
-    async with stdio_client(server_params) as (read, write):
+    print(f"[chat] Opening MCP SSE session to {MCP_SSE_URL}...", flush=True)
+    async with sse_client(MCP_SSE_URL) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
+            print("[chat] MCP session initialized; listing tools...", flush=True)
             tools = (await session.list_tools()).tools
             tool_defs = [_tool_to_openai(tool) for tool in tools]
 
@@ -112,6 +110,8 @@ async def _chat_with_tools(question: str, model: str) -> str:
             except Exception:
                 schema_note = "Schema unavailable (tool call failed). Rely only on listed MCP tools."
 
+            print("[chat] Schema fetched; sending prompt to model...", flush=True)
+
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "system", "content": f"Database schema:\n{schema_note}\nUse only these tables/columns."},
@@ -121,15 +121,27 @@ async def _chat_with_tools(question: str, model: str) -> str:
             llm_client, resolved_model = _get_llm_client_and_model(model)
 
             # Tool-call loop with a small hop limit for safety.
-            for _ in range(6):
+            for hop in range(6):
                 completion = await llm_client.chat.completions.create(
                     model=resolved_model,
                     messages=messages,
                     tools=tool_defs,
                 )
                 message = completion.choices[0].message
+                preview = (message.content or "").strip()
+                if preview:
+                    print(
+                        f"[chat] Model hop {hop+1} reasoning: {preview[:200]}" + ("…" if len(preview) > 200 else ""),
+                        flush=True,
+                    )
+                print(
+                    f"[chat] Model hop {hop+1}: tool_calls={bool(message.tool_calls)}",
+                    flush=True,
+                )
 
                 if message.tool_calls:
+                    call_names = [tc.function.name for tc in message.tool_calls]
+                    print(f"[chat] Tool calls requested: {call_names}", flush=True)
                     # Record the assistant's tool calls for the transcript.
                     messages.append(
                         {

@@ -17,9 +17,14 @@ services:
     environment:
       DB_URL_ADMIN: ${DB_URL_ADMIN}
       DB_URL_RO: ${DB_URL_RO}
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-sse}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: ${MCP_PORT:-8765}
     depends_on:
       - db
     tty: true
+    ports:
+      - "${MCP_PORT:-8765}:${MCP_PORT:-8765}"
 
   chat_gateway:
     build:
@@ -33,6 +38,7 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3-coder:30b}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama}
+      MCP_SSE_URL: ${MCP_SSE_URL:-http://mcp_server:${MCP_PORT:-8765}/sse}
       DB_URL_ADMIN: ${DB_URL_ADMIN}
       DB_URL_RO: ${DB_URL_RO}
       POSTGRES_DB: ${POSTGRES_DB}

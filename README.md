@@ -28,9 +28,9 @@ client (curl, app, agent)
     |  (tool calls)
     v
 OpenAI model (e.g., gpt-4.1-mini)
-    |  (MCP stdio)
+    |  (MCP over SSE @ http://mcp_server:8765/sse)
     v
-[MCP DB Server : FastMCP + SQLAlchemy]
+[MCP DB Server : FastMCP + SQLAlchemy]  <-- long-lived container
     |
     v
 Postgres
@@ -52,9 +52,9 @@ The `DB_URL_*` values in `.env.example` point to `db`, which is the hostname ins
 
 2) Build and start everything:
 ```bash
-docker compose up --build
+ docker compose up --build
 ```
-The `mcp_server` container will connect to `db`, create/seed tables, ensure the `readonly` role, and expose MCP tools on stdio (as the container entrypoint).
+The `mcp_server` container will connect to `db`, create/seed tables, ensure the `readonly` role, and expose MCP tools over SSE at `http://mcp_server:8765/sse` (container entrypoint runs `python mcp_db_server.py` with `MCP_TRANSPORT=sse`). The `chat_gateway` container points to that URL via `MCP_SSE_URL`.
 
 3) Check logs / quick sanity checks:
 ```bash
@@ -64,8 +64,8 @@ docker compose exec db psql -U admin -d construction -c "SELECT COUNT(*) FROM co
 ```
 
 4) Wire your MCP client/agent to the running container:
-- Use the MCP SDK’s stdio client and start the process with `docker compose exec mcp_server python mcp_db_server.py` **only** if you want an interactive foreground run. Otherwise the container’s default command is already running the server.
-- Configure your agent to call the MCP server (stdio) and set the model to `gpt-4.1-mini` (or similar).
+- Preferred: use the SSE endpoint `http://localhost:8765/sse` (or `http://mcp_server:8765/sse` inside the Compose network). The server tells the client where to POST messages.
+- If you need stdio instead, set `MCP_TRANSPORT=stdio` and point your client to a process (e.g., `docker compose exec mcp_server python mcp_db_server.py`).
 
 5) Stop when done:
 ```bash
@@ -83,7 +83,7 @@ docker compose down
   { "question": "Which projects are over budget?" }
   ```
   Optional: `"model": "<model-name>"` to override the default for the chosen provider.
-- The gateway spawns `python -m server.mcp_db_server` via stdio for each request so the latest MCP code is used. It converts OpenAI tool calls into MCP tool calls and returns the final answer text.
+- MCP transport: the gateway requires `MCP_SSE_URL` (e.g., `http://mcp_server:8765/sse`) and only uses the long-lived MCP container; there is no local stdio fallback.
 
 ## Available MCP tools
 
@@ -118,7 +118,7 @@ Steps:
 4. Start the server from `server/`:
    ```bash
    cd server
-   python -m mcp_db_server
+   python -m mcp_db_server  # defaults to stdio; set MCP_TRANSPORT=sse to serve on http://localhost:8765/sse
    ```
 
 On first run it will create/seed tables and ensure the readonly role.

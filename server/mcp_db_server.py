@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -11,7 +12,21 @@ from db_utils import get_ro_engine, init_schema_and_seed
 init_schema_and_seed()
 engine = get_ro_engine()
 
-mcp = FastMCP("construction_bi_db")
+MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "stdio").lower()
+MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
+MCP_PORT = int(os.getenv("MCP_PORT", "8765" if MCP_TRANSPORT != "stdio" else "0"))
+MCP_MOUNT_PATH = os.getenv("MCP_MOUNT_PATH", "/")
+MCP_SSE_PATH = os.getenv("MCP_SSE_PATH", "/sse")
+MCP_MESSAGE_PATH = os.getenv("MCP_MESSAGE_PATH", "/messages/")
+
+mcp = FastMCP(
+    "construction_bi_db",
+    host=MCP_HOST,
+    port=MCP_PORT,
+    mount_path=MCP_MOUNT_PATH,
+    sse_path=MCP_SSE_PATH,
+    message_path=MCP_MESSAGE_PATH,
+)
 
 FORBIDDEN_SQL = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE)\b",
@@ -130,4 +145,5 @@ def top_overruns(limit: int = 5, min_overrun_pct: float = 0.05) -> dict[str, Any
 
 
 if __name__ == "__main__":
-    mcp.run()
+    # Default to stdio for local demos; switch to SSE when running as a service.
+    mcp.run(transport=MCP_TRANSPORT)
